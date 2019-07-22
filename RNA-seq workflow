@@ -1,0 +1,62 @@
+ # Move to folder with fastqc files
+
+#0 Just in case; to concatenate multiple lanes.
+cat L001.R1.fastq.gz L002.R1.fastq.gz 
+
+#1 Perform Quality Check (QC) with fastqc to all files with .gz extension
+fastqc *.gz
+
+#2 Aggregate individual fastqc results with multiqc
+multiqc .
+
+#3 Make a folder for report outputs and move all there
+mkdir QC_reports
+mv *.html QC_reports
+
+## 4a Mapping to whole genome:
+#Create index of reference genome
+hisat2-build fastafile_direction name_to_index
+
+##Align read to reference genome (execute each command per every pair of reads)
+hisat2 -f -x reference_indexed -1 reads_R1.fq -2 reads_R2.fq -S eg2.sam
+
+###4b  Just to extract a chromosome annotation (i.e. chromosome 22 from the whole genome)
+zgrep -w chr22 hg38_ucsc_refseq_gtf.gz > chr22.gtf
+
+### Extract exons annotation
+hisat2_extract_exons.py chr22.gtf  > chr22_exons.gtf
+
+### Build splice sites
+hisat2_extract_splice_sites.py chr22.gtf  > chr22_splice.gtf
+
+### Extract index chr22 from fa file
+faFilter -name=chr22 hg38.fa.gz hg38.chr22.fa
+
+###Merge everything to create a full template of chromosome22
+hisat2-build -p 6 --ss chr22_splice.gtf --exon chr22_exons.gtf hg38.chr22.fa hg38.chr22
+Then, the name of the index is example.1.ht2 withouth 1.ht2
+
+### Create a folder for raw fastq files and move there
+mkdir raw_data
+mv *fastq.gz raw_data
+
+#5 Align sample fastq to template (Use either first or second line command)
+#Template: hisat2 -x reference_indexed -1 reads_R1.fq -2 reads_R2.fq -S eg2.sam
+hisat2 -x /home/adri/Desktop/RNA/files/raw_data/grch38_tran/genome_tran -U A.read1.fastq.gz -U A.read2.fastq.gz -S A.sam
+hisat2 -x /home/adri/Desktop/RNA/files/raw_data/grch38_tran/genome_tran -1 A.read1.fastq.gz -2 A.read2.fastq.gz | samtools view -Sbo sample.bam -
+
+#6 Convert sam to bam
+find *.sam | parallel  'samtools view -bh {} | samtools sort - -o {.}.bam; samtools index {.}.bam'
+
+#7 Merge bam files (condition 1 all single bams, condition 2 all single bams)
+samtools merge mergedABC.bam *.bam
+
+#8 Obtain a count matrix with featureCounts (single or aggregated files)
+featureCounts -a chr22.gtf -F GTF -p -T 8 -P -o countMatrix_all.txt A.bam
+featureCounts  -a chr22.gtf -F GTF -p -T 8 -P -o counts.txt file1.bam file2.bam file3.bam etc
+
+#9 Perform differential gene expression analysis in R (DESeq2_workflow file)
+
+
+
+ 
