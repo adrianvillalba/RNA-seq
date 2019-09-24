@@ -37,7 +37,9 @@ dds <- DESeq(dds)
 res <- results(dds)
 head(results(dds, tidy=TRUE)) 
 summary(res)
-write.csv(res, file = "Gene_list.csv",row.names=TRUE)
+write.csv(res, file = "Gene_list.csv",row.names=TRUE) 
+#Note this is the important file for later enrichment.
+
 ## Just in case: sort by adj p-value:
 res <- res[order(res$padj),]
 head(res)
@@ -52,3 +54,68 @@ with(res, plot(log2FoldChange, -log10(pvalue), pch=20, main="Volcano plot", xlim
 ## Add colored points: blue if padj<0.01, red if log2FC>1 and padj<0.05)
 with(subset(res, padj<.01 ), points(log2FoldChange, -log10(pvalue), pch=20, col="blue"))
 with(subset(res, padj<.01 & abs(log2FoldChange)>2), points(log2FoldChange, -log10(pvalue), pch=20, col="red"))
+
+
+##Gene enrichment script:
+#Install patfindR packages and fix execution issues
+install.packages("pathfindR")
+
+detach("package:pathfindR", unload=TRUE)
+detach("package:pathview", unload=TRUE)
+
+library(pathfindR) 
+library(pathview)
+
+install.packages("tidyverse")
+library(tidyverse)
+
+source('https://bioconductor.org/biocLite.R')
+biocLite('org.Hs.eg.db')
+library('org.Hs.eg.db')
+
+#Prepare your working directory
+setwd(choose.dir())
+getwd()
+
+#Tidy your data and prepare as input for patfindR
+input <- read.csv2(file.choose(),sep=",")
+input1<-select(input, X, log2FoldChange, padj)
+
+real_input <- na.omit(input1)
+real_input$padj <- as.numeric(as.character(real_input$padj))
+real_input$log2FoldChange <- as.numeric(as.character(real_input$log2FoldChange))
+real_input$X <- as.character(real_input$X)
+
+symbols <- mapIds(org.Hs.eg.db, real_input$X, 'SYMBOL', 'ENSEMBL')
+a<-cbind(symbols, real_input)
+
+test_input<-na.omit(a)
+test_input$X <- NULL
+View(test_input)
+
+#Run pathfindR function
+output1 <- run_pathfindR(test_input)
+print("Do not forget to manually export the bubble chart from Plots window!")
+View(output1)
+
+#Run clustering
+clustered <- cluster_pathways(output1)
+print("Do not forget to manually export the connectivity plot!")
+enrichment_chart(clustered, plot_by_cluster = TRUE)
+print("Do not forget to manually export the hierarchical plot!")
+
+#Pathway scoring
+## Select the representative pathways
+pws_table <- clustered[clustered$Status == "Representative", ]
+
+## Load the differential expression matrix
+diff_matrix <- file.choose()
+
+## Vector of x-axis labe
+cases <- c("label1", "label2")
+
+## Calculate pathway scores and plot heatmap
+score_matrix <- calculate_pw_scores(pws_table, diff_matrix, cases)
+
+#Finally, do not forget to export the heatmap!
+print("Do not forget to manually export the hierarchical plot!")
